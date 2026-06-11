@@ -37,8 +37,8 @@ $delmax        # maximum allowed source-receiver distance in km.
 $cangle        # angle for computing mechanisms probability
 45
 
-$prob_max      # probability threshold for multiples (e.g., 0.1)
-0.25
+$prob_max      # probability threshold for multiples (e.g., 0.1) 0.25
+0.95
 
 $num_cpus      # number of cores in parallel (0: use all cpu / 1: sigle core)
 2

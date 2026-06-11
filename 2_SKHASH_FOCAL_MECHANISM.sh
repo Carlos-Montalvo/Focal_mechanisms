@@ -122,8 +122,8 @@ process_skhash_day() {
     local day_dir="$1"
     local date_id=$(basename "$day_dir")
     local DAY_START_TIME=$(date +%s)
-    local hash2_dir="$day_dir/hash2"
-    local control_file="$hash2_dir/control_file.txt"
+    local hash3_dir="$day_dir/hash3" # Change to hash3 if you want to use hash3 version
+    local control_file="$hash3_dir/control_file.txt"
     
     echo -e "${YELLOW}[PID $$] Processing $date_id${NC}"
     

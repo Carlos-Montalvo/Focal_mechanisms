@@ -8,8 +8,8 @@
 # =============================================================================
 
 # Time period parameters (YYYY-MM-DD format)
-START_DATE="2025-03-10"
-END_DATE="2025-03-10"  # Adjust date range as needed
+START_DATE="2025-04-10"
+END_DATE="2025-04-10"  # Adjust date range as needed
 
 # Directory parameters
 BASEDIR="/Volumes/GeoPhysics_49/users-data/montalca"
@@ -21,7 +21,7 @@ EVENT_CATALOG="$RPNET_DIR/event_catalogue.csv"
 PHASE_METADATA="$RPNET_DIR/phase_catalogue.csv"
 STATIONS_DIR="$BASEDIR/STATIONS"
 STATION_METADATA="$STATIONS_DIR/stations.csv"
-PARALLEL_JOBS=4  # Number of days to process in parallel
+PARALLEL_JOBS=6  # Number of days to process in parallel
 
 # Python environment
 PYTHON_SCRIPT="/Volumes/GeoPhysics_49/users-data/montalca/PROGRAMS/PYTHON/FOCAL_MECHANISMS/RPNet_polarity_picker_single_day.py"

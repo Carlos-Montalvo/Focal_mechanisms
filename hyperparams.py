@@ -59,7 +59,7 @@ keep_initial_phase=True # During TauP estimation, keep initial phase (P/S). If T
 
 taup_model='/Volumes/GeoPhysics_49/users-data/montalca/VEL_MODEL/transition_zone_vmodel.npz' # TauP model (iasp91, ak135, prem, ...) / If you want to use custom model, please specify the path (e.g., '/home/jwhan/srkim_iasp.npz')
 
-hash_version='hash2' # hash2: only P polarity, hash3: P polarity ans S/P ratio (refer to SKHASH for more details)
+hash_version='hash3' # hash2: only P polarity, hash3: P polarity ans S/P ratio (refer to SKHASH for more details)
 
 # sp_freq=(1,20) # Bandpass filter frequency range for S/P ratio (e.g., (1, 20)) [Hz]
 
