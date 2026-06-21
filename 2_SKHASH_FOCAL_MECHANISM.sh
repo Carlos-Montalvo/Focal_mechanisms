@@ -127,9 +127,9 @@ process_skhash_day() {
     
     echo -e "${YELLOW}[PID $$] Processing $date_id${NC}"
     
-    # Check if hash2 directory exists
-    if [ ! -d "$hash2_dir" ]; then
-        echo -e "${RED}✗ [PID $$] $date_id: hash2 directory not found at $hash2_dir${NC}"
+    # Check if hash3 directory exists
+    if [ ! -d "$hash3_dir" ]; then
+        echo -e "${RED}✗ [PID $$] $date_id: hash3 directory not found at $hash3_dir${NC}"
         echo "FAILED:$date_id" >> /tmp/skhash_results_$$.tmp
         return 1
     fi
@@ -253,7 +253,7 @@ echo "Total wall-clock time: ${TOTAL_HOURS}h ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s
 echo "Total days processed: $TOTAL_DIRS"
 echo -e "Successful days: ${GREEN}$SUCCESSFUL_DIRS${NC}"
 echo -e "Failed days: ${RED}$FAILED_DIRS${NC}"
-echo "SKHASH outputs saved to: $POLARITIES_DIR/*/hash2/"
+echo "SKHASH outputs saved to: $POLARITIES_DIR/*/hash3/"
 echo "Log files saved to: $LOG_DIR/skhash_*.log"
 
 if [ $FAILED_DIRS -gt 0 ]; then

@@ -61,9 +61,9 @@ taup_model='/Volumes/GeoPhysics_49/users-data/montalca/VEL_MODEL/transition_zone
 
 hash_version='hash3' # hash2: only P polarity, hash3: P polarity ans S/P ratio (refer to SKHASH for more details)
 
-# sp_freq=(1,20) # Bandpass filter frequency range for S/P ratio (e.g., (1, 20)) [Hz]
+sp_freq=(1,20) # Bandpass filter frequency range for S/P ratio (e.g., (1, 20)) [Hz]
 
-# sp_win=[-2.5,-0.5,-0.5,+1.0,-0.5,+2.5] # S/P ratio window (before/after) for noise, P and S (e.g., [-2.5,-0.5,-0.5,+1.0,-0.5,+2.5]) [s]. 
-# # Noise and P-window are before/after the P arrival time, and S-window is before/after the S arrival time.
+sp_win=[-2.5,-0.5,-0.5,+1.0,-0.5,+2.5] # S/P ratio window (before/after) for noise, P and S (e.g., [-2.5,-0.5,-0.5,+1.0,-0.5,+2.5]) [s]. 
+# Noise and P-window are before/after the P arrival time, and S-window is before/after the S arrival time.
 
 #########################################################################################################

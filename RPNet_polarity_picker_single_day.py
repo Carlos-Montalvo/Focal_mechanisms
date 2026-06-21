@@ -38,6 +38,126 @@ def get_add(args):
         return pd.DataFrame()
     return pd.DataFrame({join_col: [id], 'sta': [sta], fptime: [np.nan], fstime: [np.nan]})
 
+def est_taup_2(vals):
+    idx, val, cat, ftime, pha, model, keep_initial_phase, surface_offset_km = vals
+
+    model = TauPyModel(model=model)
+
+    if pha == 'P':
+        if keep_initial_phase and pd.notnull(val['ptime0']):
+            return UTCDateTime(val['ptime0'])
+        else:
+            try:
+                arrivals = model.get_travel_times_geo(
+                    cat.dep, #+ surface_offset_km,
+                    cat.lat, cat.lon,
+                    val.lat, val.lon,
+                    phase_list=['P', 'Pg', 'Pn', 'p']
+                )
+                if not arrivals:
+                    # Fallback: devolver el ptime original si existe
+                    return UTCDateTime(val['ptime0']) if pd.notnull(val['ptime0']) else None
+                est = min(arrivals, key=lambda a: a.time).time
+                return UTCDateTime(cat[ftime]) + est
+            except Exception as e:
+                print(f"  est_taup_2 P error (dep={cat.dep:.1f}, lat={cat.lat:.3f}, lon={cat.lon:.3f}): {e}")
+                return UTCDateTime(val['ptime0']) if pd.notnull(val['ptime0']) else None
+
+    elif pha == 'S':
+        if keep_initial_phase and pd.notnull(val['stime0']):
+            return UTCDateTime(val['stime0'])
+        else:
+            try:
+                arrivals = model.get_travel_times_geo(
+                    cat.dep, #+ surface_offset_km,
+                    cat.lat, cat.lon,
+                    val.lat, val.lon,
+                    phase_list=['S', 'Sg', 'Sn', 's']
+                )
+                if not arrivals:
+                    return UTCDateTime(val['stime0']) if pd.notnull(val['stime0']) else None
+                est = min(arrivals, key=lambda a: a.time).time
+                return UTCDateTime(cat[ftime]) + est
+            except Exception as e:
+                print(f"  est_taup_2 S error (dep={cat.dep:.1f}, lat={cat.lat:.3f}, lon={cat.lon:.3f}): {e}")
+                return UTCDateTime(val['stime0']) if pd.notnull(val['stime0']) else None
+
+def preprocess_2(p_time, s_time, stream_path, sp_win, low_freq=1.0, high_freq=20.0, taper_pct=0.01):
+    """
+    Loading and preprocessing the stream data.
+    """
+    st = read(stream_path)
+    st.trim(starttime=p_time + sp_win[0] - 5, endtime=s_time + sp_win[-1] + 10)
+    st.filter('bandpass', freqmin=low_freq, freqmax=high_freq)
+    if st[0].stats.sampling_rate != 100:
+        st.resample(100)
+    st.normalize(global_max=True)
+    st.detrend('demean')
+    st.detrend('linear')
+    st.taper(taper_pct)
+    st.sort()
+    for tr in st:
+        tr.data *= 1e3
+    return st
+
+def calc_amplitude_2(p_time, s_time, station, st, sp_win):
+    if len(st) < 2:
+        return "None"
+    try:
+        n_vals, p_vals, s_vals = [], [], []
+        for trace in st:
+            n_win = trace.slice(p_time + sp_win[0], p_time + sp_win[1]).copy()
+            p_win = trace.slice(p_time + sp_win[2], p_time + sp_win[3]).copy()
+            s_win = trace.slice(s_time + sp_win[4], s_time + sp_win[5]).copy()
+            
+            # Skip empty windows
+            if len(n_win) == 0 or len(p_win) == 0 or len(s_win) == 0:
+                continue
+                
+            n_vals.append(max(n_win.data) - min(n_win.data))
+            p_vals.append(max(p_win.data) - min(p_win.data))
+            s_vals.append(max(s_win.data) - min(s_win.data))
+        
+        if not p_vals:  # No valid windows
+            return "None"
+            
+        N = np.sqrt(sum(val ** 2 for val in n_vals))
+        P = np.sqrt(sum(val ** 2 for val in p_vals))
+        S = np.sqrt(sum(val ** 2 for val in s_vals))
+        sp_ratio = S / P if P != 0 else float('inf')
+        
+        return f"{station.sta:4s} {station.chan:3s} {station.net:2s} {0.0:4.1f} {0.0:4.1f} {N:18.3f} {N:10.3f} {P:10.3f} {S:10.3f}"
+    
+    except Exception as e:
+        return "None"
+
+def prepare_amplitudes_2(params):
+    station_df, pick_id, event_info, data_dir, sp_freq, sp_win = params
+    station_df = station_df.drop_duplicates(subset=['sta0'])
+    station_df = station_df[station_df['ptime'].notnull() & station_df['stime'].notnull()].reset_index(drop=True)
+    
+    amp_list = []
+    for _, row in station_df.iterrows():
+        p_time = UTCDateTime(row.ptime)
+        s_time = UTCDateTime(row.stime)
+        stream_path = f"{data_dir}/{pick_id}/*/{row.sta0}.*"
+        
+        try:
+            st = preprocess_2(p_time, s_time, stream_path, sp_win, sp_freq[0], sp_freq[1])
+        except Exception as e:
+            # File not found or stream error — skip this station silently
+            continue
+        
+        amp_str = calc_amplitude_2(p_time, s_time, row, st, sp_win)
+        if amp_str != "None":
+            amp_list.append(amp_str)
+    
+    amp_list.sort()
+    header = f"{event_info} {len(amp_list)}"
+    amp_list.insert(0, header)
+    
+    return amp_list
+
 def process_single_day(event_catalog, phase_metadata, sta_metadata, year=None, jday=None):
     """
     Process a single day of data for RPNet polarity picking.
@@ -122,52 +242,57 @@ def process_single_day(event_catalog, phase_metadata, sta_metadata, year=None, j
     _join_col = 'event_id' if 'event_id' in pha_df.columns else fwfid
     pha_set = set(zip(pha_df[_join_col], pha_df['sta']))
     cat_ids = set(cat_df[_join_col].to_list())
-    
+
+    # Construir wf_pattern desde event times (necesario para matching con directorios)
+    if not pd.api.types.is_datetime64_any_dtype(cat_df[ftime]):
+        cat_df[ftime] = pd.to_datetime(cat_df[ftime], errors='coerce')
+
+    cat_df['wf_pattern'] = cat_df[ftime].apply(
+        lambda t: f"{t.year}_{pd.Timestamp(t).day_of_year:03d}_{t.hour:02d}{t.minute:02d}{t.second:02d}"
+    )
+
+    # Mapeo bidireccional: wf_pattern <-> event_id
+    pattern_to_id = cat_df.set_index('wf_pattern')[_join_col].to_dict()
+    cat_patterns  = set(cat_df['wf_pattern'])
+
+    # --- Bloque add_sta actualizado ---
     if add_sta:
         z_files = sorted(glob.glob(wf_dir + '/*/*.mseed'))
         print('# get list of additional stations')
-        results = parmap.map(
-            get_add,
-            [[z, pha_set, cat_ids, _join_col, fptime, fstime] for z in z_files],
-            pm_pbar=True, pm_processes=cores, pm_chunksize=1
-        )
-        pha_df0 = pd.concat([r for r in results if not r.empty])
-        pha_df0['source'] = 'add'
-        pha_df = pd.concat([pha_df, pha_df0]).reset_index(drop=True)
-        sta_df = sta_df[sta_df['sta'].isin(pha_df['sta'].to_list())].reset_index(drop=True)
-    
-    # Add station metadata to phase df
+
+        patterns = [z.split('/')[-2] for z in z_files]
+        stas     = [z.split('/')[-1].split('.')[0] for z in z_files]
+
+        all_df = pd.DataFrame({'wf_pattern': patterns, 'sta': stas})
+        all_df = all_df[all_df['wf_pattern'].isin(cat_patterns)]
+        all_df[_join_col] = all_df['wf_pattern'].map(pattern_to_id)
+        already_picked = all_df.set_index([_join_col, 'sta']).index.isin(pha_set)
+        all_df = all_df[~already_picked]
+        all_df[fptime]   = np.nan
+        all_df[fstime]   = np.nan
+        all_df['source'] = 'add'
+
+        print(f'  wf_pattern duplicados: {cat_df["wf_pattern"].duplicated().sum()}')
+        print(f'  Added {len(all_df)} empty picks from {len(z_files)} files')
+
+        pha_df = pd.concat([pha_df, all_df], ignore_index=True)  # <- faltaba este concat!
+        sta_df = sta_df[sta_df['sta'].isin(pha_df['sta'])].reset_index(drop=True)
+
+    # Add station metadata to phase df  (net/chan se añaden aquí)
     print('\n# Arrange metadata')
-    pha_df=pha_df[pha_df['sta'].isin(sta_df['sta'].to_list())].reset_index(drop=True)
-    pha_df['lat']=[sta_df[sta_df.sta==i]['lat'].iloc[0] for i in pha_df['sta'].to_list()]
-    pha_df['lon']=[sta_df[sta_df.sta==i]['lon'].iloc[0] for i in pha_df['sta'].to_list()]
-    pha_df['elv']=[sta_df[sta_df.sta==i]['elv'].iloc[0] for i in pha_df['sta'].to_list()]
-    pha_df['net']=[sta_df[sta_df.sta==i]['net'].iloc[0] for i in pha_df['sta'].to_list()]
-    pha_df['chan']=[sta_df[sta_df.sta==i]['chan'].iloc[0] for i in pha_df['sta'].to_list()]
-    pha_df=pha_df.drop_duplicates(['pick','net','sta','chan',fptime,fstime])
-    pha_df=pha_df[pha_df['pick'].isin(cat_df.drop_duplicates(['pick'])['pick'].to_list())]
+    pha_df = pha_df[pha_df['sta'].isin(sta_df['sta'])].reset_index(drop=True)
+    pha_df['lat']  = [sta_df[sta_df.sta==i]['lat'].iloc[0]  for i in pha_df['sta']]
+    pha_df['lon']  = [sta_df[sta_df.sta==i]['lon'].iloc[0]  for i in pha_df['sta']]
+    pha_df['elv']  = [sta_df[sta_df.sta==i]['elv'].iloc[0]  for i in pha_df['sta']]
+    pha_df['net']  = [sta_df[sta_df.sta==i]['net'].iloc[0]  for i in pha_df['sta']]
+    pha_df['chan'] = [sta_df[sta_df.sta==i]['chan'].iloc[0]  for i in pha_df['sta']]
+
+    # Ahora sí existen net y chan
+    pha_df = pha_df.drop_duplicates([_join_col, 'net', 'sta', 'chan', fptime, fstime])
+    pha_df = pha_df[pha_df[_join_col].isin(cat_df[_join_col])].reset_index(drop=True)
 
     # make UTCDateTime objects
     cat_df[ftime]=[UTCDateTime(i) for i in cat_df[ftime].to_list()]
-
-    # Change to TauP P arrival times (OPTION; considering pick uncertainty)
-    if change2taup:
-        print('\n\n# change to TauP arrival')
-        pha_df['ptime0']=pha_df[fptime]
-        results=parmap.map(est_taup,[[idx,val,cat_df[cat_df[fwfid]==val[fwfid]].iloc[0],ftime,'P',taup_model,keep_initial_phase] for idx,val in pha_df.iterrows()]
-                        , pm_pbar=True, pm_processes=cores,pm_chunksize=1)
-        pha_df[fptime]=results
-        print('- TauP (P) Done')
-
-        print('# change to TauP S arrival')
-        pha_df['stime0']=pha_df[fstime]
-        results=parmap.map(est_taup,[[idx,val,cat_df[cat_df[fwfid]==val[fwfid]].iloc[0],ftime,'S',taup_model,keep_initial_phase] for idx,val in pha_df.iterrows()]
-                        , pm_pbar=True, pm_processes=cores,pm_chunksize=1)
-        pha_df[fstime]=results
-        print('- TauP (S) Done')
-
-    pha_df=pha_df.sort_values(['pick','net','sta']).reset_index(drop=True)
-    pha_df
 
     # Add data_id to phase_df
     if 'event_id' in pha_df.columns and 'data_id' not in pha_df.columns:
@@ -179,6 +304,47 @@ def process_single_day(event_catalog, phase_metadata, sta_metadata, year=None, j
             print(f"  Dropping {dropped} phases with no matching data_id")
             pha_df = pha_df.dropna(subset=['data_id']).reset_index(drop=True)
         print(f"  Phases after merge: {len(pha_df)}")
+
+    # # Change to TauP P arrival times (OPTION; considering pick uncertainty)
+    # if change2taup:
+    #     print('\n\n# change to TauP arrival')
+    #     pha_df['ptime0']=pha_df[fptime]
+    #     results=parmap.map(est_taup,[[idx,val,cat_df[cat_df[fwfid]==val[fwfid]].iloc[0],ftime,'P',taup_model,keep_initial_phase] for idx,val in pha_df.iterrows()]
+    #                     , pm_pbar=True, pm_processes=cores,pm_chunksize=1)
+    #     pha_df[fptime]=results
+    #     print('- TauP (P) Done')
+
+    #     print('# change to TauP S arrival')
+    #     pha_df['stime0']=pha_df[fstime]
+    #     results=parmap.map(est_taup,[[idx,val,cat_df[cat_df[fwfid]==val[fwfid]].iloc[0],ftime,'S',taup_model,keep_initial_phase] for idx,val in pha_df.iterrows()]
+    #                     , pm_pbar=True, pm_processes=cores,pm_chunksize=1)
+    #     pha_df[fstime]=results
+    #     print('- TauP (S) Done')
+    if change2taup:
+        print('\n\n# change to TauP arrival')
+        pha_df['ptime0'] = pha_df[fptime]
+        results = parmap.map(
+            est_taup_2,  # <-- nueva función con offset
+            [[idx, val, cat_df[cat_df[fwfid]==val[fwfid]].iloc[0], ftime, 'P', taup_model, keep_initial_phase, 15.0]  # <-- 15.0
+             for idx, val in pha_df.iterrows()],
+            pm_pbar=True, pm_processes=cores, pm_chunksize=1
+        )
+        pha_df[fptime] = results
+        print('- TauP (P) Done')
+
+        print('# change to TauP S arrival')
+        pha_df['stime0'] = pha_df[fstime]
+        results = parmap.map(
+            est_taup_2,  # <-- nueva función con offset
+            [[idx, val, cat_df[cat_df[fwfid]==val[fwfid]].iloc[0], ftime, 'S', taup_model, keep_initial_phase, 15.0]  # <-- 15.0
+             for idx, val in pha_df.iterrows()],
+            pm_pbar=True, pm_processes=cores, pm_chunksize=1
+        )
+        pha_df[fstime] = results
+        print('- TauP (S) Done')
+
+    pha_df=pha_df.sort_values([_join_col,'net','sta']).reset_index(drop=True)
+    pha_df
     
     # Filter to only P and S phases (exclude amplitude picks like AML)
     print(f"\n# Filtering to only P and S phases")
@@ -299,26 +465,48 @@ def process_single_day(event_catalog, phase_metadata, sta_metadata, year=None, j
 
     # let's make amplitude file for hash3
     r_df['sta0'] = r_df['sta']
+
+    print(r_df[['sta', 'ptime', 'stime']].head(20))
+    print(f"stime nulls: {r_df['stime'].isnull().sum()} / {len(r_df)}")
+
     if hash_version=='hash3':
         print('# Prep for amplitude ratio')
         picks=r_df.drop_duplicates([fwfid]).sort_values([fwfid])[fwfid].to_list()
         # amps=parmap.map(prepare_amplitudes,[[r_df[r_df[fwfid]==p].reset_index(drop=True),p,p,wf_dir] for p in picks], pm_pbar=True, pm_processes=cores,pm_chunksize=1)
-        amps=parmap.map(prepare_amplitudes,[[r_df[r_df[fwfid]==p].reset_index(drop=True),p,p,wf_dir,sp_freq,sp_win] for p in picks]
+        amps=parmap.map(prepare_amplitudes_2,[[r_df[r_df[fwfid]==p].reset_index(drop=True),p,p,wf_dir,sp_freq,sp_win] for p in picks]
                         , pm_pbar=True, pm_processes=cores,pm_chunksize=1)
         amp=sum(amps,[])
     else:
         amp=None
 
-    # Final processing
+    # Make SKHASH input setting
     if iteration!=0:
         r_df.loc[r_df['std'] > std_threshold, 'predict'] = 'K'
+    # make threshold for mean
+    if iteration!=0 and mean_threshold!=0:
+        r_df.loc[r_df['prob'] < mean_threshold, 'predict'] = 'K'
+        # r_df=r_df[r_df['prob']>=mean_thresuld].reset_index(drop=True)
     if rm_unknwon:
         r_df=r_df[r_df['predict']!='K'].reset_index(drop=True)
-    if iteration!=0 and mean_threshold!=0:
-        r_df=r_df[r_df['prob']>=mean_thresuld].reset_index(drop=True)
+
+    # print('\n\n# Final result:')
+    # print(r_df)
+
+    r_df=r_df.drop_duplicates(['sta',fwfid]).reset_index(drop=True)
+    prep_skhash(cat_df=cat_df,pol_df=r_df,amp=amp,sta_df=sta_df,ftime=ftime,fwfid=fwfid,ctrl0=ctrl0,out_dir=out_dir,hash_version=hash_version)
+    print('% calculation time (min): ','%.2f'%((time.time()-stime)/60))
+    print('\n\n@ ALL DONE!')
+
+    # # Final processing
+    # if iteration!=0:
+    #     r_df.loc[r_df['std'] > std_threshold, 'predict'] = 'K'
+    # if rm_unknwon:
+    #     r_df=r_df[r_df['predict']!='K'].reset_index(drop=True)
+    # if iteration!=0 and mean_threshold!=0:
+    #     r_df=r_df[r_df['prob']>=mean_thresuld].reset_index(drop=True)
     
-    print('\n\n# Final result:')
-    print(r_df.to_string())
+    # print('\n\n# Final result:')
+    # print(r_df.to_string())
 
     # # Filter to ensure consistent sets of events
     # cat_df = cat_df.drop_duplicates([fwfid]).reset_index(drop=True)
@@ -336,24 +524,6 @@ def process_single_day(event_catalog, phase_metadata, sta_metadata, year=None, j
     # print('% calculation time (min): ','%.2f'%((time.time()-stime)/60))
     
     # print('\n\n@ ALL DONE!')
-
-    # Make SKHASH input setting
-    if iteration!=0:
-        r_df.loc[r_df['std'] > std_threshold, 'predict'] = 'K'
-    # make threshold for mean
-    if iteration!=0 and mean_threshold!=0:
-        r_df.loc[r_df['prob'] < mean_threshold, 'predict'] = 'K'
-        # r_df=r_df[r_df['prob']>=mean_thresuld].reset_index(drop=True)
-    if rm_unknwon:
-        r_df=r_df[r_df['predict']!='K'].reset_index(drop=True)
-
-    print('\n\n# Final result:')
-    print(r_df)
-
-    r_df=r_df.drop_duplicates(['sta',fwfid]).reset_index(drop=True)
-    prep_skhash(cat_df=cat_df,pol_df=r_df,amp=amp,sta_df=sta_df,ftime=ftime,fwfid=fwfid,ctrl0=ctrl0,out_dir=out_dir,hash_version=hash_version)
-    print('% calculation time (min): ','%.2f'%((time.time()-stime)/60))
-    print('\n\n@ ALL DONE!')
 
 # -----------------------------------------------------------------------
 # MAIN CODE
