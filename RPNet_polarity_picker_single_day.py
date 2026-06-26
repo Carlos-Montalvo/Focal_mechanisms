@@ -140,7 +140,7 @@ def prepare_amplitudes_2(params):
     for _, row in station_df.iterrows():
         p_time = UTCDateTime(row.ptime)
         s_time = UTCDateTime(row.stime)
-        stream_path = f"{data_dir}/{pick_id}/*/{row.sta0}.*"
+        stream_path = f"{data_dir}/{pick_id}/{row.sta0}.*"
         
         try:
             st = preprocess_2(p_time, s_time, stream_path, sp_win, sp_freq[0], sp_freq[1])
@@ -157,6 +157,70 @@ def prepare_amplitudes_2(params):
     amp_list.insert(0, header)
     
     return amp_list
+
+def prep_skhash_2(cat_df, pol_df, amp, sta_df, out_dir, ftime, fwfid, ctrl0, hash_version='hash2'):
+
+    if os.path.exists(out_dir + '/' + hash_version):
+        shutil.rmtree(out_dir + '/' + hash_version)
+    os.makedirs(out_dir + '/' + hash_version + '/IN')
+    os.makedirs(out_dir + '/' + hash_version + '/OUT')
+
+    cat_df = cat_df.sort_values([fwfid]).reset_index(drop=True)
+    sta_df = sta_df.sort_values(['sta']).reset_index(drop=True)
+
+    pol_df.to_csv(out_dir + '/' + hash_version + '/uniq_pol.csv', index=False)
+
+    # --- Station file (SKHASH CSV format) ---
+    with open(out_dir + '/' + hash_version + '/IN/station.csv', 'w') as f:
+        f.write('station,network,location,channel,latitude,longitude,elevation,start_time,end_time\n')
+        for _, val in sta_df.iterrows():
+            f.write(f"{val.sta},{val.net},,{val.chan},{val.lat:.5f},{val.lon:.5f},{int(val.elv)},1900-01-01,3000-01-01\n")
+
+    # --- Polarity file (SKHASH CSV format) ---
+    with open(out_dir + '/' + hash_version + '/IN/phase.csv', 'w') as f:
+        f.write('event_id,station,network,location,channel,p_polarity,origin_latitude,origin_longitude,origin_depth_km\n')
+        for _, val in cat_df.iterrows():
+            s_df = pol_df[pol_df[fwfid] == val[fwfid]].drop_duplicates(['sta']).sort_values(['sta']).reset_index(drop=True)
+            for _, val2 in s_df.iterrows():
+                # Convert polarity: U -> 1.0, D -> -1.0, K -> 0.0
+                pol_map = {'U': 1.0, 'D': -1.0, 'K': 0.0}
+                p_pol = pol_map.get(str(val2.predict)[0], 0.0)
+                sta_row = sta_df[sta_df.sta0 == val2.sta].iloc[0]
+                f.write(f"{val[fwfid]},{sta_row.sta},{sta_row.net},--,{sta_row.chan},{p_pol},"
+                        f"{val.lat:.5f},{val.lon:.5f},{val.dep:.3f}\n")
+
+    # --- Amplitude file (SKHASH CSV format) ---
+    if hash_version == 'hash3' and amp is not None:
+        with open(out_dir + '/' + hash_version + '/IN/amp.csv', 'w') as f:
+            f.write('event_id,station,network,location,channel,noise_p,noise_s,amp_p,amp_s\n')
+            current_event = None
+            for line in amp:
+                parts = line.strip().split()
+                # Header line: event_id n_stations
+                if len(parts) == 2 and not parts[1][0].isalpha():
+                    current_event = parts[0]
+                # Data line: STA chan net 0.0 0.0 N N P S
+                elif len(parts) == 9 and current_event is not None:
+                    sta, chan, net = parts[0], parts[1], parts[2]
+                    N, P, S = float(parts[5]), float(parts[7]), float(parts[8])
+                    f.write(f"{current_event},{sta},{net},--,{chan},{N},{N},{P},{S}\n")
+
+    # --- Control file ---
+    with open(out_dir + '/' + hash_version + '/control_file.txt', 'w') as f:
+        f.write('## Control file for SKHASH (SKHASH format)\n\n')
+        f.write('$input_format\nskhash\n\n')
+        f.write('$stfile\n' + out_dir + '/' + hash_version + '/IN/station.csv\n\n')
+        f.write('$fpfile\n' + out_dir + '/' + hash_version + '/IN/phase.csv\n\n')
+        if hash_version == 'hash3':
+            f.write('$ampfile\n' + out_dir + '/' + hash_version + '/IN/amp.csv\n\n')
+        f.write('$outfile1\n' + out_dir + '/' + hash_version + '/OUT/out.csv\n\n')
+        f.write('$outfile2\n' + out_dir + '/' + hash_version + '/OUT/out2.csv\n\n')
+        f.write('$outfolder_plots\n' + out_dir + '/' + hash_version + '/OUT/figure\n\n')
+        with open(ctrl0, 'r') as f4:
+            for l in f4:
+                f.write(l)
+
+    return
 
 def process_single_day(event_catalog, phase_metadata, sta_metadata, year=None, jday=None):
     """
@@ -493,7 +557,7 @@ def process_single_day(event_catalog, phase_metadata, sta_metadata, year=None, j
     # print(r_df)
 
     r_df=r_df.drop_duplicates(['sta',fwfid]).reset_index(drop=True)
-    prep_skhash(cat_df=cat_df,pol_df=r_df,amp=amp,sta_df=sta_df,ftime=ftime,fwfid=fwfid,ctrl0=ctrl0,out_dir=out_dir,hash_version=hash_version)
+    prep_skhash_2(cat_df=cat_df,pol_df=r_df,amp=amp,sta_df=sta_df,ftime=ftime,fwfid=fwfid,ctrl0=ctrl0,out_dir=out_dir,hash_version=hash_version)
     print('% calculation time (min): ','%.2f'%((time.time()-stime)/60))
     print('\n\n@ ALL DONE!')
 
