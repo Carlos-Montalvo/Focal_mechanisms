@@ -174,7 +174,8 @@ def prep_skhash_2(cat_df, pol_df, amp, sta_df, out_dir, ftime, fwfid, ctrl0, has
     with open(out_dir + '/' + hash_version + '/IN/station.csv', 'w') as f:
         f.write('station,network,location,channel,latitude,longitude,elevation,start_time,end_time\n')
         for _, val in sta_df.iterrows():
-            f.write(f"{val.sta},{val.net},,{val.chan},{val.lat:.5f},{val.lon:.5f},{int(val.elv)},1900-01-01,3000-01-01\n")
+            # FIX: usar '--' en location para que sea consistente con phase.csv y amp.csv
+            f.write(f"{val.sta},{val.net},--,{val.chan},{val.lat:.5f},{val.lon:.5f},{int(val.elv)},1900-01-01,3000-01-01\n")
 
     # --- Polarity file (SKHASH CSV format) ---
     with open(out_dir + '/' + hash_version + '/IN/phase.csv', 'w') as f:
@@ -182,7 +183,6 @@ def prep_skhash_2(cat_df, pol_df, amp, sta_df, out_dir, ftime, fwfid, ctrl0, has
         for _, val in cat_df.iterrows():
             s_df = pol_df[pol_df[fwfid] == val[fwfid]].drop_duplicates(['sta']).sort_values(['sta']).reset_index(drop=True)
             for _, val2 in s_df.iterrows():
-                # Convert polarity: U -> 1.0, D -> -1.0, K -> 0.0
                 pol_map = {'U': 1.0, 'D': -1.0, 'K': 0.0}
                 p_pol = pol_map.get(str(val2.predict)[0], 0.0)
                 sta_row = sta_df[sta_df.sta0 == val2.sta].iloc[0]
@@ -191,9 +191,14 @@ def prep_skhash_2(cat_df, pol_df, amp, sta_df, out_dir, ftime, fwfid, ctrl0, has
 
     # --- Amplitude file (SKHASH CSV format) ---
     if hash_version == 'hash3' and amp is not None:
+        # FIX: construir mapa event_id -> coordenadas de origen desde cat_df
+        origin_map = cat_df.set_index(fwfid)[['lat', 'lon', 'dep']]
+
         with open(out_dir + '/' + hash_version + '/IN/amp.csv', 'w') as f:
-            f.write('event_id,station,network,location,channel,noise_p,noise_s,amp_p,amp_s\n')
+            # FIX: incluir columnas de origen en el header
+            f.write('event_id,station,network,location,channel,noise_p,noise_s,amp_p,amp_s,origin_latitude,origin_longitude,origin_depth_km\n')
             current_event = None
+            skipped_no_origin = 0
             for line in amp:
                 parts = line.strip().split()
                 # Header line: event_id n_stations
@@ -203,7 +208,15 @@ def prep_skhash_2(cat_df, pol_df, amp, sta_df, out_dir, ftime, fwfid, ctrl0, has
                 elif len(parts) == 9 and current_event is not None:
                     sta, chan, net = parts[0], parts[1], parts[2]
                     N, P, S = float(parts[5]), float(parts[7]), float(parts[8])
-                    f.write(f"{current_event},{sta},{net},--,{chan},{N},{N},{P},{S}\n")
+                    # Buscar coordenadas del evento
+                    if current_event not in origin_map.index:
+                        skipped_no_origin += 1
+                        continue
+                    ev = origin_map.loc[current_event]
+                    f.write(f"{current_event},{sta},{net},--,{chan},{N},{N},{P},{S},"
+                            f"{ev.lat:.5f},{ev.lon:.5f},{ev.dep:.3f}\n")
+            if skipped_no_origin > 0:
+                print(f"  Amplitudes descartadas (event_id sin origen en cat_df): {skipped_no_origin}")
 
     # --- Control file ---
     with open(out_dir + '/' + hash_version + '/control_file.txt', 'w') as f:

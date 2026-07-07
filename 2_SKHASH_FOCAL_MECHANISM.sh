@@ -245,43 +245,43 @@ rm -f /tmp/skhash_results_*.tmp
 # FINAL SUMMARY
 # =============================================================================
 
-echo "=================================================="
-echo -e "${PURPLE}FOCAL MECHANISM COMPUTATION COMPLETE${NC}"
-echo "=================================================="
-echo "Processing finished at: $(date)"
-echo "Total wall-clock time: ${TOTAL_HOURS}h ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s"
-echo "Total days processed: $TOTAL_DIRS"
-echo -e "Successful days: ${GREEN}$SUCCESSFUL_DIRS${NC}"
-echo -e "Failed days: ${RED}$FAILED_DIRS${NC}"
-echo "SKHASH outputs saved to: $POLARITIES_DIR/*/hash3/"
-echo "Log files saved to: $LOG_DIR/skhash_*.log"
+# echo "=================================================="
+# echo -e "${PURPLE}FOCAL MECHANISM COMPUTATION COMPLETE${NC}"
+# echo "=================================================="
+# echo "Processing finished at: $(date)"
+# echo "Total wall-clock time: ${TOTAL_HOURS}h ${TOTAL_MINUTES}m ${TOTAL_SECONDS}s"
+# echo "Total days processed: $TOTAL_DIRS"
+# echo -e "Successful days: ${GREEN}$SUCCESSFUL_DIRS${NC}"
+# echo -e "Failed days: ${RED}$FAILED_DIRS${NC}"
+# echo "SKHASH outputs saved to: $POLARITIES_DIR/*/hash3/"
+# echo "Log files saved to: $LOG_DIR/skhash_*.log"
 
-if [ $FAILED_DIRS -gt 0 ]; then
-    echo -e "${RED}Failed days:${NC}"
-    for failed_date in "${FAILED_DIRS_LIST[@]}"; do
-        echo -e "  ${RED}✗ $failed_date${NC}"
-    done
-    echo ""
-fi
+# if [ $FAILED_DIRS -gt 0 ]; then
+#     echo -e "${RED}Failed days:${NC}"
+#     for failed_date in "${FAILED_DIRS_LIST[@]}"; do
+#         echo -e "  ${RED}✗ $failed_date${NC}"
+#     done
+#     echo ""
+# fi
 
-# Calculate averages if we have successful days
-if [ $SUCCESSFUL_DIRS -gt 0 ]; then
-    AVG_TIME_PER_DAY=$((TOTAL_PROCESSING_TIME / SUCCESSFUL_DIRS))
-    AVG_MINUTES=$((AVG_TIME_PER_DAY / 60))
-    AVG_SECONDS=$((AVG_TIME_PER_DAY % 60))
-    echo "Average processing time per successful day: ${AVG_MINUTES}m ${AVG_SECONDS}s"
+# # Calculate averages if we have successful days
+# if [ $SUCCESSFUL_DIRS -gt 0 ]; then
+#     AVG_TIME_PER_DAY=$((TOTAL_PROCESSING_TIME / SUCCESSFUL_DIRS))
+#     AVG_MINUTES=$((AVG_TIME_PER_DAY / 60))
+#     AVG_SECONDS=$((AVG_TIME_PER_DAY % 60))
+#     echo "Average processing time per successful day: ${AVG_MINUTES}m ${AVG_SECONDS}s"
     
-    # Calculate speedup achieved by parallel processing
-    ESTIMATED_SEQUENTIAL_TIME=$((AVG_TIME_PER_DAY * SUCCESSFUL_DIRS))
-    EST_SEQ_HOURS=$((ESTIMATED_SEQUENTIAL_TIME / 3600))
-    EST_SEQ_MINUTES=$(((ESTIMATED_SEQUENTIAL_TIME % 3600) / 60))
-    SPEEDUP=$(echo "scale=1; $ESTIMATED_SEQUENTIAL_TIME / $TOTAL_DURATION" | bc -l 2>/dev/null || echo "N/A")
+#     # Calculate speedup achieved by parallel processing
+#     ESTIMATED_SEQUENTIAL_TIME=$((AVG_TIME_PER_DAY * SUCCESSFUL_DIRS))
+#     EST_SEQ_HOURS=$((ESTIMATED_SEQUENTIAL_TIME / 3600))
+#     EST_SEQ_MINUTES=$(((ESTIMATED_SEQUENTIAL_TIME % 3600) / 60))
+#     SPEEDUP=$(echo "scale=1; $ESTIMATED_SEQUENTIAL_TIME / $TOTAL_DURATION" | bc -l 2>/dev/null || echo "N/A")
     
-    echo "Estimated sequential time would have been: ${EST_SEQ_HOURS}h ${EST_SEQ_MINUTES}m"
-    if [ "$SPEEDUP" != "N/A" ]; then
-        echo "Speedup achieved: ${SPEEDUP}x"
-    fi
-fi
+#     echo "Estimated sequential time would have been: ${EST_SEQ_HOURS}h ${EST_SEQ_MINUTES}m"
+#     if [ "$SPEEDUP" != "N/A" ]; then
+#         echo "Speedup achieved: ${SPEEDUP}x"
+#     fi
+# fi
 
 echo "=================================================="
 

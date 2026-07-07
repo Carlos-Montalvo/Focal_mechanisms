@@ -4,8 +4,8 @@ $vmodel_paths  # whitespace/newline delimited list of paths to the velocity mode
 $npolmin       # mininum number of polarity data (e.g., 8)
 8
 
-$max_agap      # maximum azimuthal gap
-360
+$max_agap      # maximum azimuthal gap 360
+300
 
 $max_pgap      # maximum "plungal" gap
 90
@@ -25,7 +25,7 @@ $maxout        # max num of acceptable focal mech. outputs (e.g., 500); 500
 $ratmin        # minimum allowed signal to noise ratio
 3
 
-$badfrac       # fraction polarities assumed bad
+$badfrac       # fraction polarities assumed bad 0.05
 0.05
 
 $qbadfrac      # assumed noise in amplitude ratios, log10 (e.g. 0.3 for a factor of 2)
@@ -38,10 +38,13 @@ $cangle        # angle for computing mechanisms probability
 45
 
 $prob_max      # probability threshold for multiples (e.g., 0.1) 0.25
-0.95
+0.90
 
 $num_cpus      # number of cores in parallel (0: use all cpu / 1: sigle core)
 2
 
 $use_fortran   # Fortran subroutine for fast grid search
 True
+
+$look_dep
+0, 200, 3
