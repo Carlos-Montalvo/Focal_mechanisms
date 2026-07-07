@@ -1,0 +1,6 @@
+name: rpnet
+channels:
+  - defaults
+dependencies:
+  - python=3.9
+prefix: /home/montalca/miniconda3/envs/rpnet
